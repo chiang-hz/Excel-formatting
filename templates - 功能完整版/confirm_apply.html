@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel 格式化工具 - 步驟 3</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 40px auto; padding: 0 20px; background-color: #f4f4f4; }
+        .container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; text-align: center; }
+        h2 { font-weight: normal; color: #555; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px;}
+        .info-box { background-color: #e9f5ff; border-left: 5px solid #007bff; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .sheet-list { list-style-type: none; padding: 0; }
+        .sheet-list li { margin-bottom: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px; }
+        .sheet-list label { margin-left: 10px; font-size: 1.1em; }
+        .select-all-container { margin-bottom: 15px; }
+        .submit-btn { background-color: #28a745; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 1.1em; width: 100%; margin-top: 20px; transition: background-color 0.3s; }
+        .submit-btn:hover { background-color: #218838; }
+        
+        /* --- 進度條樣式 --- */
+        #progress-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9999; display: none; justify-content: center; align-items: center; flex-direction: column; color: white; font-size: 1.2em; }
+        #progress-container { width: 80%; max-width: 500px; background-color: #555; border-radius: 10px; overflow: hidden; border: 2px solid #fff; }
+        #progress-bar { width: 0%; height: 30px; background-color: #007bff; text-align: center; line-height: 30px; color: white; font-weight: bold; transition: width 0.4s ease-in-out; }
+        #progress-text { margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Excel 格式套用工具</h1>
+        <h2>步驟 3：確認要套用格式的工作表</h2>
+
+        <div class="info-box">
+            <p><strong>格式來源：</strong> 檔案 "{{ template_filename }}" 的工作表 "{{ source_sheet_name }}"</p>
+            <p><strong>目標檔案：</strong> {{ target_filename }}</p>
+        </div>
+
+        <form id="format-form" action="/apply_format" method="post">
+            <label for="source_sheet">請勾選目標檔案中要套用格式的工作表：</label>
+
+            <div class="select-all-container">
+                <input type="checkbox" id="select-all" checked>
+                <label for="select-all"><strong>全選 / 全部取消</strong></label>
+            </div>
+
+            <ul class="sheet-list">
+                {% for sheet_name in target_sheet_names %}
+                <li>
+                    <input type="checkbox" name="target_sheets" value="{{ sheet_name }}" id="sheet-{{ loop.index }}" checked>
+                    <label for="sheet-{{ loop.index }}">{{ sheet_name }}</label>
+                </li>
+                {% endfor %}
+            </ul>
+            
+            <button type="submit" class="submit-btn">套用格式並下載</button>
+        </form>
+    </div>
+
+    <!-- 進度條 HTML -->
+    <div id="progress-overlay">
+        <div id="progress-container">
+            <div id="progress-bar">0%</div>
+        </div>
+        <div id="progress-text">正在處理檔案中，請稍候...</div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // --- 控制 "全選" 的腳本 ---
+        document.getElementById('select-all').addEventListener('change', function(event) {
+            const checkboxes = document.querySelectorAll('input[name="target_sheets"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = event.target.checked;
+            });
+        });
+
+        // --- 控制進度條和跳轉的腳本 ---
+        const form = document.getElementById('format-form');
+        const overlay = document.getElementById('progress-overlay');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        let progressInterval;
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+
+        function startMonitoringCookie() {
+            const monitorInterval = setInterval(function() {
+                if (getCookie('fileDownloadInProgress') === 'true') {
+                    clearInterval(monitorInterval);
+                    clearInterval(progressInterval);
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    progressText.textContent = '處理完成！即將返回首頁...';
+                    
+                    setTimeout(function() {
+                        overlay.style.display = 'none';
+                        document.cookie = "fileDownloadInProgress=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+                        // 跳轉回首頁
+                        window.location.href = '/';
+                    }, 1500); // 延遲 1.5 秒
+                }
+            }, 500);
+        }
+
+        form.addEventListener('submit', function(event) {
+            // 檢查是否至少選擇了一個工作表
+            const checkedSheets = document.querySelectorAll('input[name="target_sheets"]:checked');
+            if (checkedSheets.length === 0) {
+                alert('請至少選擇一個要套用格式的工作表！');
+                event.preventDefault(); // 阻止表單提交
+                return;
+            }
+
+            overlay.style.display = 'flex';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            progressText.textContent = '正在處理檔案中，請稍候...';
+            
+            let width = 0;
+            progressInterval = setInterval(function() {
+                if (width < 90) {
+                    width += 5;
+                } else if (width < 98) {
+                    width += 1;
+                } else {
+                    clearInterval(progressInterval);
+                }
+                progressBar.style.width = width + '%';
+                progressBar.textContent = width + '%';
+            }, 200);
+
+            startMonitoringCookie();
+        });
+    </script>
+</body>
+</html>
